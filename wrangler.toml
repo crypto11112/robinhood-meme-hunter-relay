@@ -1,3 +1,14 @@
 name = "robinhood-meme-hunter-relay"
 main = "worker.js"
 compatibility_date = "2026-09-14"
+
+[triggers]
+crons = [ "*/5 * * * *" ]
+
+[[services]]
+binding = "MEME_HUNTER"
+service = "robinhood-meme-hunter"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
