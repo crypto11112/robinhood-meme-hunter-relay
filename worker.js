@@ -1,36 +1,27 @@
 /**
- * Robinhood Chain Meme Hunter — V670 Cron Relay Worker
+ * Robinhood Chain Meme Hunter — Cron Relay V2
  *
- * PURPOSE
- * - Tiny Cloudflare Worker whose only job is to trigger the main Meme Hunter
- *   every 5 minutes without running the heavy scanner inside a Cron Trigger.
- * - The main V670 Worker keeps all scanner/provider/scoring/Telegram logic.
- * - This relay makes one POST request to the main Worker's V670 scheduled-relay route.
- *
- * CLOUDFLARE SETUP
- * - Deploy this as a SEPARATE Worker, e.g. robinhood-meme-hunter-relay
- * - Add a Cron Trigger for every 5 minutes.
- * - Remove/disable the every-5-minutes cron from the main robinhood-meme-hunter Worker.
- *
- * COST
- * - Designed for Cloudflare Free tier.
+ * Uses a Cloudflare Service Binding instead of a public Worker-to-Worker fetch.
+ * Cron: every 5 minutes.
  */
 
-const MAIN_SCHEDULED_SCAN_URL =
+const MAIN_SCAN_URL =
   "https://robinhood-meme-hunter.johnd1987.workers.dev/scan?v670ScheduledRelay=1";
 
-async function triggerMainScan() {
-  const response = await fetch(
-    MAIN_SCHEDULED_SCAN_URL,
-    {
-      method: "POST",
-      headers: {
-        "accept": "application/json",
-        "x-robinhood-meme-hunter-cron-relay": "V670_EXTERNAL_RELAY"
-      }
-    }
-  );
+async function triggerMainScan(env) {
+  if (!env.MEME_HUNTER || typeof env.MEME_HUNTER.fetch !== "function") {
+    throw new Error("MEME_HUNTER_SERVICE_BINDING_MISSING");
+  }
 
+  const request = new Request(MAIN_SCAN_URL, {
+    method: "POST",
+    headers: {
+      "accept": "application/json",
+      "x-robinhood-meme-hunter-cron-relay": "SERVICE_BINDING_V2"
+    }
+  });
+
+  const response = await env.MEME_HUNTER.fetch(request);
   const body = await response.text();
 
   if (!response.ok) {
@@ -41,7 +32,7 @@ async function triggerMainScan() {
 
   return {
     ok: true,
-    status: "MAIN_SCAN_TRIGGERED",
+    status: "MAIN_SCAN_TRIGGERED_VIA_SERVICE_BINDING",
     httpStatus: response.status,
     responsePreview: body.slice(0, 500),
     timestamp: new Date().toISOString()
@@ -53,13 +44,15 @@ export default {
     return Response.json({
       ok: true,
       worker: "Robinhood Chain Meme Hunter Cron Relay",
+      version: "V2_SERVICE_BINDING",
       status: "ONLINE",
-      target: MAIN_SCHEDULED_SCAN_URL,
+      binding: "MEME_HUNTER",
+      targetWorker: "robinhood-meme-hunter",
       timestamp: new Date().toISOString()
     });
   },
 
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(triggerMainScan());
+    ctx.waitUntil(triggerMainScan(env));
   }
 };
